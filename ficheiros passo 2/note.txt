@@ -1,0 +1,1 @@
+The server awaits. Host:192.168.56.10. Keeper: deploy. Consult the gate records.
