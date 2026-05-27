@@ -600,3 +600,166 @@ A análise documentada nesta versão incide apenas sobre a Prova I do ambiente W
 Os timestamps foram mantidos conforme apresentados pelas ferramentas utilizadas. Sempre que necessário, a interpretação temporal deverá considerar o fuso horário e o contexto da ferramenta usada.
 
 ---
+
+
+
+# Prova 2 
+
+## Passo1:
+Analisar os ficheiros extraidos da prova 1 "note.txt" e "The Miracle and the Sleeper.txt".
+
+O "The Miracle and the Sleeper.txt" diz:
+
+    Nem tudo o que está escondido está guardado em arcas. Algumas verdades ficam agarradas à superfície de objetos comuns, invisíveis para quem não sabe procurar. Existe um documento na biblioteca do utilizador d3vucci que tem uma “segunda pele”: um símbolo/imagem escondido dentro de uma imagem, protegido pela palavra Metropolis. Encontra esse símbolo. O pergaminho/ficheiro selado na biblioteca irá revelar os seus segredos, se souberes como procurar.
+
+Com base nesta informação, foi analisada a pasta:
+
+`Users\d3vucci\Documents`
+
+Através do FTKImager exportamos 2 ficheiros da pasta dos documentos: 
+
+- notes.txt
+- sealed-scroll.7z
+
+## Passo 2: Análise inicial do ficheiro sealed-scroll.7z
+
+Foi inicialmente listado o conteúdo do ficheiro `sealed-scroll.7z` com o 7-Zip:
+
+```powershell
+& "C:\Program Files\7-Zip\7z.exe" l ".\sealed-scroll.7z"
+```
+
+O arquivo continha um ficheiro chamado:
+
+`linux-clue.txt`
+
+De seguida, foi testada a password `Metropolis`:
+
+```powershell
+& "C:\Program Files\7-Zip\7z.exe" t ".\sealed-scroll.7z" -p"Metropolis"
+```
+
+O resultado indicou erro de password:
+
+```powershell
+ERROR: Data Error in encrypted file. Wrong password? : linux-clue.txt
+```
+
+Assim, concluiu-se que `Metropolis` não era a password direta do ficheiro `sealed-scroll.7z`, mas sim uma pista para desbloquear outro conteúdo escondido.
+
+## Passo3: Pesquisa de uma imagem escondida no ficheiro notes.txt
+
+O ficheiro notes.txt apresentava conteúdo textual no início, mas tinha um tamanho anormalmente elevado para um simples ficheiro de texto. Por isso, foi feita uma pesquisa por assinaturas de ficheiros no seu conteúdo binário.
+
+```powershell
+$bytes = [System.IO.File]::ReadAllBytes("C:\Users\Rodrigo\Desktop\Mestrado\2Semestre\Auditoria\Trabalho-Auditoria-AnaliseForense\Prova2\Documents\notes.txt")
+
+function Find-Pattern {
+    param(
+        [byte[]]$Data,
+        [byte[]]$Pattern,
+        [string]$Name
+    )
+
+    for ($i = 0; $i -le $Data.Length - $Pattern.Length; $i++) {
+        $found = $true
+
+        for ($j = 0; $j -lt $Pattern.Length; $j++) {
+            if ($Data[$i + $j] -ne $Pattern[$j]) {
+                $found = $false
+                break
+            }
+        }
+
+        if ($found) {
+            "{0} encontrado em offset decimal {1} / hex 0x{2:X}" -f $Name, $i, $i
+        }
+    }
+}
+
+Find-Pattern $bytes ([byte[]](0xFF,0xD8,0xFF)) "JPEG"
+Find-Pattern $bytes ([byte[]](0x89,0x50,0x4E,0x47,0x0D,0x0A,0x1A,0x0A)) "PNG"
+Find-Pattern $bytes ([byte[]](0x50,0x4B,0x03,0x04)) "ZIP/DOCX"
+Find-Pattern $bytes ([byte[]](0x25,0x50,0x44,0x46)) "PDF"
+```
+
+O resultado obtido foi:
+
+`JPEG encontrado em offset decimal 94 / hex 0x5E`
+
+Este resultado indica que, dentro do ficheiro `notes.txt`, existia uma imagem JPEG escondida a partir do offset `0x5E`.
+
+## Passo 4: Extração da imagem a partir do notes.txt
+
+Com base no offset identificado, foi feita a extração dos dados a partir do byte 94 até ao fim do ficheiro, criando uma imagem chamada notes_carved.jpg.
+
+Ficheiro Powershell para extrair a imagem do Hexadecimal:
+
+```powershell
+$bytes = [System.IO.File]::ReadAllBytes("C:\Users\Rodrigo\Desktop\Mestrado\2Semestre\Auditoria\Trabalho-Auditoria-AnaliseForense\Prova2\Documents\notes.txt")
+
+$start = 94
+$length = $bytes.Length - $start
+
+$out = New-Object byte[] $length
+[Array]::Copy($bytes, $start, $out, 0, $length)
+
+[System.IO.File]::WriteAllBytes("C:\Users\Rodrigo\Desktop\Mestrado\2Semestre\Auditoria\Trabalho-Auditoria-AnaliseForense\Prova2\Documents\notes_carved.jpg", $out)
+```
+
+## Passo 5: Extração de dados escondidos da imagem com steghide
+
+Como a imagem extraída era um ficheiro JPEG, foi utilizada a ferramenta `steghide` através do Ubuntu para verificar se continha dados escondidos.
+
+Instalação da ferramenta:
+
+```bash
+- sudo apt update
+- sudo apt install steghide
+```
+
+Extração dos dados escondidos:
+
+```bash
+steghide extract -sf notes_carved.jpg -p Metropolis
+```
+
+A password Metropolis, indicada na pista, permitiu extrair um ficheiro chamado:
+
+`secret.txt`
+
+O conteúdo do ficheiro secret.txt era:
+
+`Nf7#mK2@deploy`
+
+Este valor foi interpretado como a password necessária para abrir o ficheiro `sealed-scroll.7z`.
+
+## Passo 6: Abertura do ficheiro sealed-scroll.7z
+
+Com a password obtida através da imagem, foi testado novamente o ficheiro `sealed-scroll.7z`:
+
+```powershell
+& "C:\Program Files\7-Zip\7z.exe" t ".\sealed-scroll.7z" -p"Nf7#mK2@deploy"
+```
+
+Após validação da password, o ficheiro foi extraído:
+
+```powershell
+& "C:\Program Files\7-Zip\7z.exe" x ".\sealed-scroll.7z" -p"Nf7#mK2@deploy" -o".\sealed_scroll_extraido"
+```
+
+O ficheiro extraído foi:
+
+`linux-clue.txt`
+
+Este ficheiro contém a pista para a fase seguinte da investigação, relacionada com o ambiente Linux.
+
+## Conclusão da Prova 2
+
+A Prova 2 permitiu demonstrar que o ficheiro `notes.txt`, aparentemente textual, continha uma imagem JPEG embutida a partir do offset `0x5E`. A imagem foi extraída através de file carving e analisada com a ferramenta `steghide`.
+
+A palavra `Metropolis`, indicada na pista textual, não correspondia à password do arquivo `sealed-scroll.7z`, mas sim à password utilizada para extrair dados escondidos da imagem. O conteúdo extraído revelou a password `Nf7#mK2@deploy`, que permitiu abrir o arquivo `sealed-scroll.7z` e obter o ficheiro `linux-clue.txt`.
+
+Assim, conclui-se que a cadeia de evidência da Prova 2 foi:
+
+`The Miracle and the Sleeper.txt` → `notes.txt` → `notes_carved.jpg` → `secret.txt` → `sealed-scroll.7z` → `linux-clue.txt`
