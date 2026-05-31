@@ -1,0 +1,3 @@
+./Android/data/com.telegram.app/chat_history.db
+./Android/data/com.secretChat.app/messages.db
+./Android/data/com.android.providers.telephony/databases/sms.db
